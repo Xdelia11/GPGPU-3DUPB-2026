@@ -100,7 +100,7 @@ int main() {
     // convert from minor and major version to the number of cores per SM
 
     int SPsPerSM = _ConvertSMVer2Cores (prop.major, prop.minor);
-    int SPcores = multiProcessorCount * 64;
+    int SPcores = multiProcessorCount * SPsPerSM;
     printf("Number of SMs: %d\n", multiProcessorCount);
     printf("Number of SP cores: %d\n", SPcores);
 
