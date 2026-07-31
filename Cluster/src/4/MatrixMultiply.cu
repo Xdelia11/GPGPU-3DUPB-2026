@@ -20,8 +20,8 @@ inline void checkCuda(cudaError_t err) {
 __global__ void multiplyMatrix(float *a, float *b, float *c, int size) {
     
     // TODO: Compute the global row and column indices for this thread. Use blockIdx, blockDim, and threadIdx. It is a 2D grid of 2D blocks, watch slide if not sure how to do this.
-    int row = 0;
-    int col = 0;
+    int row = threadIdx.y + blockIdx.y * blockDim.y;
+    int col = threadIdx.x + blockIdx.x * blockDim.x;
 
 
     // Compute a value in the result
@@ -38,8 +38,8 @@ __global__ void multiplyMatrix(float *a, float *b, float *c, int size) {
 __global__ void betterMultiplyMatrix(float *a, float *b, float *c, int size) {
     
     // TODO: Compute the global row and column indices for this thread. Use blockIdx, blockDim, and threadIdx.
-    int row = 0; 
-    int col = 0;
+    int row = threadIdx.y + blockIdx.y * blockDim.y;
+    int col = threadIdx.x + blockIdx.x * blockDim.x;
 
     // I used here a more efficient memory shared between threads in the same block, to reduce the number of accesses to global memory.
     __shared__ float aTile[TILE][TILE];
@@ -51,10 +51,20 @@ __global__ void betterMultiplyMatrix(float *a, float *b, float *c, int size) {
     // Add the missing bound check so that the last blocks of threads don't make out-of-bounds accesses to a and b.
 
 
-    for (int i = 0; i < size / TILE; i ++) {
+    for (int i = 0; i < (size + TILE - 1) / TILE; i ++) {
         // Load the tiles from global memory to shared memory
-        aTile[threadIdx.y][threadIdx.x] = a[row * size + (i * TILE + threadIdx.x)];
-        bTile[threadIdx.y][threadIdx.x] = b[(i * TILE + threadIdx.y) * size + col];
+        if ((row < size) && (i * TILE + threadIdx.x) < size) {
+            aTile[threadIdx.y][threadIdx.x] = a[row * size + (i * TILE + threadIdx.x)];
+        } else {
+            aTile[threadIdx.y][threadIdx.x] = 0;
+        }
+
+        if ((col < size) && (i * TILE + threadIdx.y) < size) {
+            bTile[threadIdx.y][threadIdx.x] = b[(i * TILE + threadIdx.y) * size + col];
+        } else {
+            bTile[threadIdx.y][threadIdx.x] = 0;
+        }
+
         __syncthreads();
         // Compute smaller matrix multiplication
         for (int j = 0; j < TILE; j++) {
@@ -63,7 +73,9 @@ __global__ void betterMultiplyMatrix(float *a, float *b, float *c, int size) {
         __syncthreads();
     }
 
-    c[row * size + col] = sum;
+    if (row < size && col < size) {
+        c[row * size + col] = sum;
+    }
 }
 
 int main(void) {
@@ -106,11 +118,14 @@ int main(void) {
 
     // TODO: try launching multiplyMatrix (the naive version) here instead of
     // betterMultiplyMatrix, keeping everything else the same, and compare the time
-    betterMultiplyMatrix<<<dimGrid, dimBlock>>>(aDev, bDev, cDev, SIZE);
+    multiplyMatrix<<<dimGrid, dimBlock>>>(aDev, bDev, cDev, SIZE);
+    //betterMultiplyMatrix<<<dimGrid, dimBlock>>>(aDev, bDev, cDev, SIZE);
 
     // TODO: a kernel launch can fail silently (bad grid/block configuration,
     // out-of-bounds shared memory, etc.). Add a cudaGetLastError() + checkCuda()
     // call right here, immediately after the launch.
+    err = cudaGetLastError();
+    checkCuda(err);
 
     err = cudaEventRecord(stop);
     checkCuda(err);
@@ -121,6 +136,39 @@ int main(void) {
     err = cudaMemcpy(cHost.data(), cDev, SIZE * SIZE * sizeof(float), cudaMemcpyDeviceToHost);
     checkCuda(err);
 
+    float ms;
+    err = cudaEventElapsedTime(&ms, start, stop);
+    checkCuda(err); 
+    printf("Time: %f ms (varianta naiva)\n", ms);
+
+
+    // varianta optimizata
+    err = cudaMemset(cDev, 0, SIZE * SIZE * sizeof(float));
+    checkCuda(err);
+    
+    err = cudaEventRecord(start);
+    checkCuda(err);
+
+    betterMultiplyMatrix<<<dimGrid, dimBlock>>>(aDev, bDev, cDev, SIZE);
+
+    err = cudaGetLastError();
+    checkCuda(err);
+
+    err = cudaEventRecord(stop);
+    checkCuda(err);
+
+    err = cudaEventSynchronize(stop);
+    checkCuda(err);
+
+    err = cudaMemcpy(cHost.data(), cDev, SIZE * SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+    checkCuda(err);
+
+    float ms1;
+    err = cudaEventElapsedTime(&ms1, start, stop);
+    checkCuda(err); 
+    printf("Time: %f ms (varianta optimizata)\n", ms1);
+
+
     cudaFree(aDev);
     cudaFree(bDev);
     cudaFree(cDev);
@@ -129,10 +177,12 @@ int main(void) {
 
     printf("cHost[0] = %f\n", cHost[0]);
     printf("cHost[SIZE * SIZE - 1] = %f\n", cHost[SIZE * SIZE - 1]);
+    // printf("Time: %f ms\n", ms);
 
-    float ms;
-    err = cudaEventElapsedTime(&ms, start, stop);
+    err = cudaEventDestroy(start);
     checkCuda(err);
-
-    printf("Time: %f ms\n", ms);
+    err = cudaEventDestroy(stop);
+    checkCuda(err);
 }
+
+
