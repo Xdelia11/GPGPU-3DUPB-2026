@@ -1,12 +1,8 @@
-/* Vec3 class
+/* vec3 class
  *
  * This class is used to represent a 3D vector. It is used to represent
  * points in 3D space, as well as RGB colors.
  *
- * It also contains some utility functions to work better with class instances
- *
- * To undersand those ones I did some research on C++ operator overloading and
- * std::ostream
  *
 */
 #ifndef VEC3_HPP

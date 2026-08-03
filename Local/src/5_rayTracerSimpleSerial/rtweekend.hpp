@@ -27,8 +27,8 @@ inline double degrees_to_radians(double degrees) {
 
 // Common Headers
 
-#include "Vec3.hpp"
-#include "Ray.hpp"
+#include "vec3.hpp"
+#include "ray.hpp"
 
 // Clamp Function
 

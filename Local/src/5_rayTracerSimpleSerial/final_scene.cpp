@@ -104,6 +104,7 @@ int main() {
 
     std::ofstream ppm_file("final_scene.ppm");
     ppm_file << "P3\n" << image_width << " " << image_height << "\n255\n";
+    printf("Rendering...\n");
 
     // TODO: start the chrono timer here
 

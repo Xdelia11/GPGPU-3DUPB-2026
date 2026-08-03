@@ -1,7 +1,7 @@
 #ifndef HITTABLE_HPP
 #define HITTABLE_HPP
 
-#include "Ray.hpp"
+#include "ray.hpp"
 
 // Forward declaration of material class
 // This means that the compiler knows that material is a class, but we don't know about it.
