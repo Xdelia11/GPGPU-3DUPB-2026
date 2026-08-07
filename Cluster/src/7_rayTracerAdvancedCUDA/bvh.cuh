@@ -67,13 +67,45 @@ __device__ bool bvh_node::hit(const ray& r, interval ray_t, hit_record& rec) con
     // here using an explicit stack, before peeking at the iterative reference implementation further down.
 
     //Recursive approach
-     if (!_bbox.hit(r, ray_t))
-         return false;
+    //  if (!_bbox.hit(r, ray_t))
+    //      return false;
 
-     bool hit_left = _left->hit(r, ray_t, rec);
-     bool hit_right = _right->hit(r, interval(ray_t.min, hit_left ? rec.t : ray_t.max), rec);
+    //  bool hit_left = _left->hit(r, ray_t, rec);
+    //  bool hit_right = _right->hit(r, interval(ray_t.min, hit_left ? rec.t : ray_t.max), rec);
 
-     return hit_left || hit_right;
+    //  return hit_left || hit_right;
+
+    // Iterative
+    const bvh_node* stack[64];
+    int top = 0;
+    stack[top] = this;
+    top++;
+
+    while (top) {
+        top--;
+        const bvh_node* curr = stack[top];
+
+        if (!curr->_bbox.hit(r, ray_t)) {
+            continue;
+        }
+
+        if (curr->_last_level) {
+            if (curr->_left->hit(r, ray_t, rec)) {
+                return true;
+            }
+
+            if (curr->_right->hit(r, ray_t, rec)) {
+                return true;
+            }
+        } else {
+            stack[top] = (bvh_node*)curr->_left;
+            top++;
+
+            stack[top] = (bvh_node*)curr->_right;
+            top++;
+        }
+    }
+    return false;
 
      // Iterative approach --------------------------------------------------------------------------------------------
      /*/
@@ -113,40 +145,117 @@ __device__ bvh_node::bvh_node(hittable **l, int n, curandState *localState) {
 	// TODO: Analyze and see the recursive version for tree construction. Try to implement an iterative version here using an explicit stack, before peeking at
 
     // Recursive approach
-     int axis = randomInt(localState, 0, 2);
-     bool (*comparator)(hittable*, hittable*);
-     switch (axis) {
-         case 0:
-             comparator = box_x_compare;
-             break;
-         case 1:
-             comparator = box_y_compare;
-             break;
-         case 2:
-             comparator = box_z_compare;
-             break;
-     }
+    //  int axis = randomInt(localState, 0, 2);
+    //  bool (*comparator)(hittable*, hittable*);
+    //  switch (axis) {
+    //      case 0:
+    //          comparator = box_x_compare;
+    //          break;
+    //      case 1:
+    //          comparator = box_y_compare;
+    //          break;
+    //      case 2:
+    //          comparator = box_z_compare;
+    //          break;
+    //  }
 
-     if (n == 1) {
-         _left = _right = l[0];
-     } else if (n == 2) {
-         if (comparator(l[0], l[1])) {
-             _left = l[0];
-             _right = l[1];
-         } else {
-             _left = l[1];
-             _right = l[0];
-         }
-     } else {
-         thrust::sort(l, l + n, comparator);
-         int mid = n / 2;
-         _left = new bvh_node(l, mid, localState);
-         _right = new bvh_node(l + mid, n - mid, localState);
-     }
+    //  if (n == 1) {
+    //      _left = _right = l[0];
+    //  } else if (n == 2) {
+    //      if (comparator(l[0], l[1])) {
+    //          _left = l[0];
+    //          _right = l[1];
+    //      } else {
+    //          _left = l[1];
+    //          _right = l[0];
+    //      }
+    //  } else {
+    //      thrust::sort(l, l + n, comparator);
+    //      int mid = n / 2;
+    //      _left = new bvh_node(l, mid, localState);
+    //      _right = new bvh_node(l + mid, n - mid, localState);
+    //  }
 
-     _bbox = aabb(_left->bounding_box(), _right->bounding_box());
+    //  _bbox = aabb(_left->bounding_box(), _right->bounding_box());
 
-    
+    //iterativa
+    struct StackStruct {
+        bvh_node* node;
+        hittable** objects;
+        int nr;
+        bool visited;
+    };
+
+    StackStruct stack[128];
+    int top = 0;
+    stack[top] = {this, l, n, false};
+    top++;
+
+    while (top) {
+        top--;
+        StackStruct elem = stack[top];
+
+        bvh_node* current = elem.node;
+
+        if (elem.visited) {
+            current->_bbox = aabb(current->_left->bounding_box(), current->_right->bounding_box());
+            continue;
+        }
+
+        int axis = randomInt(localState, 0, 2);
+        bool (*comparator)(hittable*, hittable*);
+        switch (axis) {
+            case 0:
+                comparator = box_x_compare;
+                break;
+            case 1:
+                comparator = box_y_compare;
+                break;
+            case 2:
+                comparator = box_z_compare;
+                break;
+        }
+
+        if (elem.nr == 1) {
+            current->_left = current->_right = elem.objects[0];
+            current->_bbox = aabb(current->_left->bounding_box(), current->_right->bounding_box());
+            current->_last_level = true;
+        }
+        else if (elem.nr == 2) {
+
+            if (comparator(elem.objects[0], elem.objects[1])) {
+                current->_left = elem.objects[0];
+                current->_right = elem.objects[1];
+            } else {
+                current->_left = elem.objects[1];
+                current->_right = elem.objects[0];
+            }
+
+            current->_bbox = aabb(current->_left->bounding_box(), current->_right->bounding_box());
+            current->_last_level = true;
+        }
+        else {
+            current->_last_level = false;
+            thrust::sort(elem.objects, elem.objects + elem.nr, comparator);
+            int mid = elem.nr / 2;
+
+            bvh_node* leftChild = new bvh_node();
+            bvh_node* rightChild = new bvh_node();
+
+            current->_left = leftChild;
+            current->_right = rightChild;
+
+            stack[top] = {current, elem.objects, elem.nr, true};
+            top++;
+
+            stack[top] = {rightChild, elem.objects + mid, elem.nr - mid, false};
+            top++;
+
+            stack[top] = {leftChild, elem.objects, mid, false};
+            top++;
+        }
+    }
+
     // Iterative approach -------------------------------------------------------------------------------------------
     /*/
     // Get a modifiable copy of the list
@@ -208,6 +317,8 @@ __device__ bvh_node::bvh_node(hittable **l, int n, curandState *localState) {
     _bbox = aabb(_left->bounding_box(), _right->bounding_box());
 
     // TODO: Have I forgotten something? Investigate memory leaks and fix them.
+    free(list);
+    free(nodes);
     /*/
 }
 
@@ -215,5 +326,6 @@ __device__ aabb bvh_node::bounding_box() const {
     return _bbox;
 }
 
+// varinata iterativa: Time: 1232.24ms
 
 #endif

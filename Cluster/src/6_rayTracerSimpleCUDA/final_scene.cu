@@ -1,8 +1,28 @@
 /* Main file to Ray Trace a scene with multiple spheres
  * TODO. Answer the following questions:
  * How many kernels are we launching? How many blocks and threads per each kernel?
+ * 4 kernels
+ * 1) renderInit<<<blockCount, blockSize>>>(nx, ny, d_randState, d_worldRandState);
+ * blocks: blockCount
+ * threads: blockSize
+ * 2) allocateWorld<<<1, 1>>>(d_list, d_world, d_cam, d_worldRandState);
+ * blocks: 1
+ * threads: 1
+ * 3) render<<<blockCount, blockSize>>>(fb_gpu, nx, ny, ns, d_cam, d_world, d_randState);
+ * blocks: blockCount
+ * threads: blockSize
+ * 4) freeWorld<<<1, 1>>>(d_list, d_world, d_cam);
+ * blocks: 1
+ * threads: 1
+ * 
  * Why do we need to run kernels with only 1 thread?
+ * For memory allocation and free, a single thread is used because is not efficient
+ * to parallelize it. In general we have a real time application and we need to 
+ * move between sences.
+ * 
  * Which kernel is the most expensive one? Why?
+ * The render kernel is the most expensive one because we draw the image
+ * and we do expensive operations.
 */
 
 #include "header.cuh"
@@ -154,13 +174,30 @@ int main(void) {
     /* TODO:
      * 1. Double the number of samples per pixel. Recompile, rerun, and compare the rendering
      *    time printed below to the initial value. Is the increase approximately 2x? Why/why not?
+    ns = 10 - Time spent rendering: 1785.964478 ms
+    ns = 20 - Time spent rendering: 4494.847656 ms
+
+    The increase is aprox 2.5 when doubling the samples because it doubles the arithmetic operations and 
+    we also have overhead
+
      * 2. Reset the number of samples per pixel and do the same with the resolution.
      *    Is the increase linear with pixel count, or more pronounced? Why, given the block/thread
      *    launch configuration below and the GPU's number of SMs/cores?
+    nx = 512, ny = 512 - Time spent rendering: 1785.964478 ms - 512*512 = 262144 pixels
+    nx = 1024, ny = 1024 - Time spent rendering: 7224.041016 ms - 1024*1024 = 1048576 pixels (aprox 4* pixels)
+
+    The execution time increases almost linearly whit pixel count. The GPU has a fixed number of SMs and CUDA cores,
+    so threads blocks must be scheduled. On google colab, the increase is close to 4x, lokely because the available GPU 
+    is less powerful. On Kaggle, where a better GPU is available, the scheduler can utlize the hardware more 
+    efficiently (Time spent rendering: 6392.065430 ms with a T4 X 2).
      */
+    
     int nx = 512;
     int ny = 512;
-    int ns = 10;
+    //int nx = 1024;
+    //int ny = 1024;
+    int ns = 10; // Time spent rendering: 1785.964478 ms
+    //int ns = 20; // Time spent rendering: 4494.847656 ms
 
     int num_pixels = nx * ny;
 
@@ -227,6 +264,9 @@ int main(void) {
      * Record the time and compute the speedup factor. How does this compare to the number of cores on your GPU?
      */
 	printf("Time spent rendering: %f ms\n", milliseconds);
+    // Time spent rendering: 1785.964478 ms
+    // speedup = 25191/ 1785 = 14
+    // I used a T4 GPU (google colab) and have 2560 cores
 
     color *fb_cpu = (color*)malloc(num_pixels * sizeof(color));
     cudaStatus = cudaMemcpy(fb_cpu, fb_gpu, num_pixels * sizeof(color), cudaMemcpyDeviceToHost);
